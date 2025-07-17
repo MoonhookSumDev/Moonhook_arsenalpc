@@ -1,0 +1,186 @@
+-- Load Rayfield UI
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- Roblox Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- GUI Window
+local Window = Rayfield:CreateWindow({
+    Name = "Moonhook🌙 arsenal🖥️",
+    LoadingTitle = "Moonhook Arsenal",
+    LoadingSubtitle = "by sin5kk + eszkeredzon",
+    ConfigurationSaving = { Enabled = true, FolderName = "MoonhookArsenal", FileName = "Settings" },
+    Discord = { Enabled = true, Invite = "moonhook", RememberJoins = true },
+    KeySystem = false,
+})
+
+-- 1️⃣ Main Tab
+local MainTab = Window:CreateTab("Main", 4483362458)
+MainTab:CreateSection("Credits")
+MainTab:CreateLabel("Made by sin5kk + eszkeredzon")
+MainTab:CreateLabel("Discord: moonhook")
+
+-- 2️⃣ Aim Tab
+local AimTab = Window:CreateTab("Aim", 4483362458)
+AimTab:CreateSection("Aimbot Settings")
+
+local aimbotEnabled = false
+local aimbotFOV = 150
+local teamCheckEnabled = true
+local wallCheckEnabled = true
+
+AimTab:CreateToggle({ Name = "Enable Aimbot", CurrentValue = false, Callback = function(v) aimbotEnabled = v end })
+AimTab:CreateSlider({ Name = "Aimbot FOV", Range = {50, 300}, Increment = 5, CurrentValue = aimbotFOV, Callback = function(v) aimbotFOV = v end })
+AimTab:CreateToggle({ Name = "Team Check", CurrentValue = true, Callback = function(v) teamCheckEnabled = v end })
+AimTab:CreateToggle({ Name = "Wall Check", CurrentValue = true, Callback = function(v) wallCheckEnabled = v end })
+
+-- 3️⃣ Visuals Tab
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+VisualsTab:CreateSection("ESP Features")
+
+local espEnabled = false
+local tracerEnabled = false
+local distanceEnabled = false
+
+VisualsTab:CreateToggle({ Name = "ESP Boxes", CurrentValue = false, Callback = function(v) espEnabled = v end })
+VisualsTab:CreateToggle({ Name = "Tracers", CurrentValue = false, Callback = function(v) tracerEnabled = v end })
+VisualsTab:CreateToggle({ Name = "Show Distance", CurrentValue = false, Callback = function(v) distanceEnabled = v end })
+
+-- 4️⃣ Movement Tab
+local MovementTab = Window:CreateTab("Movement", 4483362458)
+MovementTab:CreateSection("Movement Features")
+
+local speedEnabled = false
+local speedValue = 0
+
+MovementTab:CreateSlider({ Name = "CFrame Speed", Range = {0, 100}, Increment = 2, CurrentValue = 0, Callback = function(v) speedValue = v end })
+MovementTab:CreateToggle({ Name = "Enable CFrame Speed", CurrentValue = false, Callback = function(v) speedEnabled = v end })
+
+-- FOV Circle (Movable)
+local fovCircle = Drawing.new("Circle")
+fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Thickness = 1
+fovCircle.Filled = false
+fovCircle.Radius = aimbotFOV
+fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+fovCircle.Visible = false
+
+local dragging = false
+local dragOffset = Vector2.new(0,0)
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local pos = Vector2.new(input.Position.X, input.Position.Y)
+        if (pos - fovCircle.Position).Magnitude <= fovCircle.Radius then
+            dragging = true
+            dragOffset = fovCircle.Position - pos
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local pos = Vector2.new(input.Position.X, input.Position.Y)
+        fovCircle.Position = pos + dragOffset
+    end
+end)
+
+-- Aimbot Logic (Locks on target in FOV circle)
+RunService.RenderStepped:Connect(function()
+    fovCircle.Radius = aimbotFOV
+    fovCircle.Visible = aimbotEnabled
+
+    if speedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local moveDir = LocalPlayer.Character.Humanoid.MoveDirection
+        LocalPlayer.Character.HumanoidRootPart.CFrame += moveDir * (speedValue / 10)
+    end
+
+    if not aimbotEnabled then return end
+
+    local closestTarget, shortestDist = nil, aimbotFOV
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid").Health > 0 then
+            if teamCheckEnabled and player.Team == LocalPlayer.Team then continue end
+
+            local part = player.Character.HumanoidRootPart
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if not onScreen then continue end
+
+            local distance = (Vector2.new(screenPos.X, screenPos.Y) - fovCircle.Position).Magnitude
+            if distance < shortestDist then
+                if wallCheckEnabled then
+                    local ray = Ray.new(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * 500)
+                    local hitPart = Workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character})
+                    if hitPart and not hitPart:IsDescendantOf(player.Character) then
+                        continue
+                    end
+                end
+                shortestDist = distance
+                closestTarget = part
+            end
+        end
+    end
+
+    if closestTarget then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, closestTarget.Position)
+    end
+end)
+
+-- ESP Drawing
+local ESPObjects = {}
+local function clearESP()
+    for _, v in pairs(ESPObjects) do
+        for _, d in pairs(v) do d:Remove() end
+    end
+    table.clear(ESPObjects)
+end
+
+RunService.RenderStepped:Connect(function()
+    clearESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Head") then
+            local hrp, head = player.Character.HumanoidRootPart, player.Character.Head
+            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            if not onScreen then continue end
+
+            local headPos = Camera:WorldToViewportPoint(head.Position)
+            local height = math.abs(headPos.Y - pos.Y)
+            local width = height / 2
+            local boxPos = Vector2.new(pos.X - width / 2, pos.Y - height / 2)
+            local color = player.Team == LocalPlayer.Team and Color3.fromRGB(0,170,255) or Color3.fromRGB(255,0,0)
+
+            ESPObjects[player] = {}
+            if espEnabled then
+                local box = Drawing.new("Square")
+                box.Position, box.Size, box.Color, box.Thickness, box.Filled = boxPos, Vector2.new(width,height), color,1,false
+                box.Visible = true
+                table.insert(ESPObjects[player], box)
+            end
+            if tracerEnabled then
+                local line = Drawing.new("Line")
+                line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Color, line.Thickness, line.Visible = color, 1, true
+                table.insert(ESPObjects[player], line)
+            end
+            if distanceEnabled then
+                local text = Drawing.new("Text")
+                text.Text = tostring(math.floor((hrp.Position - Camera.CFrame.Position).Magnitude)).."m"
+                text.Position = Vector2.new(pos.X, pos.Y + height/2 + 5)
+                text.Color, text.Size, text.Center, text.Outline, text.Visible = color,14,true,true,true
+                table.insert(ESPObjects[player], text)
+            end
+        end
+    end
+end)
